@@ -1,6 +1,7 @@
 from astropy.wcs import WCS
 
 import numpy as np
+import logging
 
 
 from src.idl_circapphot import circ_apphot
@@ -12,6 +13,7 @@ PSIZE_ASEC = [1.221, 1.213, 1.222, 1.220]
 
 
 def ensemble_photometry(configs, verbose=False):
+    logger = logging.getLogger(__name__)
 
     x_deg = configs['x_coord']
     y_deg = configs['y_coord']
@@ -28,8 +30,14 @@ def ensemble_photometry(configs, verbose=False):
         target_file_path = configs['image_file_path'] + f"/mosaici{channel}/Combine/mosaic.fits"
         
         # 1.1 convert RA/DEC to pixel coordinates
-        wcs = WCS(target_file_path) 
-        xc, yc = wcs.wcs_world2pix(x_deg, y_deg, 0)
+        try:
+            wcs = WCS(target_file_path) 
+            xc, yc = wcs.wcs_world2pix(x_deg, y_deg, 0)
+            logger.info(f"Channel {channel}: Converted RA={x_deg}, DEC={y_deg} to pixel coordinates x={xc:.2f}, y={yc:.2f}")
+        except Exception as e:
+            logger.error(f"Failed to create WCS or convert coordinates for {configs['name']} ch{channel}: {e} (file: {target_file_path})")
+            print(f"Error creating WCS: {e}")
+            continue
 
         if verbose:
             print(f"Target coordinates in pixels: x={xc:.2f}, y={yc:.2f}")
@@ -37,14 +45,16 @@ def ensemble_photometry(configs, verbose=False):
         try:
             psf_data = get_PSF(psf_file_path, channel=channel)
         except (FileNotFoundError, RuntimeError) as e:
+            logger.error(f"Failed to load PSF for {configs['name']} ch{channel}: {e} (file: {psf_file_path})")
             print(f"Error: {e}")
-            return
+            continue
         
         try:
             image_data = get_Image(target_file_path)
         except (FileNotFoundError, RuntimeError) as e:
+            logger.error(f"Failed to load image for {configs['name']} ch{channel}: {e} (file: {target_file_path})")
             print(f"Error: {e}")
-            return
+            continue
         
         # Aperture and annulus sizes in pixels
         ap_radius = configs['ap_radius'] * (PSIZE_ASEC[channel-1] / 0.6)
@@ -57,12 +67,17 @@ def ensemble_photometry(configs, verbose=False):
                 bgndwidth=outer_ann_radius-inner_ann_radius,
                 quiet=True, rbackin=inner_ann_radius
             )
+            # Log one-shot photometry results
+            phot_flux_ujy = result['total_counts'] * APCOR[channel-1] * 8.47
+            phot_sigma_ujy = result['sigma'] * APCOR[channel-1] * 8.47
+            logger.info(f"One-shot photometry for {configs['name']} ch{channel}: pixel_coords=({xc:.2f}, {yc:.2f}), total_counts={result['total_counts']:.6f}, sigma={result['sigma']:.6f}, flux={phot_flux_ujy:.6f} µJy, sigma={phot_sigma_ujy:.6f} µJy")
             if verbose:
-                print(f"Photometry result: {result['total_counts'] * APCOR[channel-1] * 8.47}")
-                print(f"Photometric error (sigma): {result['sigma'] * APCOR[channel-1] * 8.47}")
+                print(f"Photometry result: {phot_flux_ujy}")
+                print(f"Photometric error (sigma): {phot_sigma_ujy}")
         except Exception as e:
+            logger.error(f"Error in one-shot aperture photometry for {configs['name']} ch{channel}: {e}")
             print(f"Error in aperture photometry: {e}")
-            return
+            continue
 
         one_shot_file = 'results/all_one_shot.csv'
         save_one_shot(one_shot_file, configs['name'], result['total_counts']*APCOR[channel-1]*8.47, result['sigma']*APCOR[channel-1]*8.47, channel)
@@ -77,7 +92,9 @@ def ensemble_photometry(configs, verbose=False):
         print(measured_sigma)
         
         scales = FACTORS * result['sigma']
+        logger.info(f"Starting ensemble photometry for {configs['name']} ch{channel}: scales={scales}, grid={configs['grid']}x{configs['grid']}, spacing={configs['spacing']}")
         sim_images_with_pos = []
+        ensemble_count = 0
         for scale in scales:
             for ii in range(configs['grid']):
                 for jj in range(configs['grid']):
@@ -89,7 +106,7 @@ def ensemble_photometry(configs, verbose=False):
                     # ========================================================================
                     # 2. Place PRF at specified coordinates in a copy of the image so
                     #    successive placements don't accumulate on the same image
-                    processed_psf_image = make_PSF(psf_data, x_pos, y_pos, channel, scale, verbose=verbose)
+                    processed_psf_image = make_PSF(psf_data, x_pos, y_pos, channel, scale, verbose=verbose, save_psf=True, filename=f"{configs['name']}_ch{channel}.fits")
                     simulated_image = image_data.copy()
                     simulated_image = place_PSF(simulated_image, processed_psf_image, x_pos, y_pos)
 
@@ -101,13 +118,18 @@ def ensemble_photometry(configs, verbose=False):
                             bgndwidth=outer_ann_radius-inner_ann_radius,
                             quiet=True, rbackin=inner_ann_radius
                         )
+                        ensemble_count += 1
+                        phot_flux_ujy = result['total_counts'] * APCOR[channel-1] * 8.47
+                        phot_sigma_ujy = result['sigma'] * APCOR[channel-1] * 8.47
+                        logger.info(f"Ensemble photometry {ensemble_count} for {configs['name']} ch{channel}: scale={scale:.6f}, pixel_coords=({x_pos:.2f}, {y_pos:.2f}), total_counts={result['total_counts']:.6f}, sigma={result['sigma']:.6f}, flux={phot_flux_ujy:.6f} µJy, sigma={phot_sigma_ujy:.6f} µJy")
                         sim_images_with_pos.append((simulated_image, x_pos, y_pos))
                         if verbose:
-                            print(f"Photometry result: {result['total_counts'] * APCOR[channel-1] * 8.47}")
-                            print(f"Photometric error (sigma): {result['sigma'] * APCOR[channel-1] * 8.47}")
+                            print(f"Photometry result: {phot_flux_ujy}")
+                            print(f"Photometric error (sigma): {phot_sigma_ujy}")
                     except Exception as e:
+                        logger.error(f"Error in ensemble aperture photometry for {configs['name']} ch{channel} at scale={scale:.6f}, pos=({x_pos:.2f}, {y_pos:.2f}): {e}")
                         print(f"Error in aperture photometry: {e}")
-                        return
+                        continue
 
                     # =======================================================================
                     # 4. Save results to CSV
@@ -139,4 +161,6 @@ def ensemble_photometry(configs, verbose=False):
                 # 6. Save grid plot of all simulated images with apertures/annuli
                 # out_fname = os.path.join("plots/grids", f"{configs['name']}_ch{channel}scale{scale}.png")
                 # save_grid_plot(sim_images_with_pos, configs['name'], channel, scale, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, out_fname)
+        
+        logger.info(f"Completed ensemble photometry for {configs['name']} ch{channel}: {ensemble_count} measurements total")
        

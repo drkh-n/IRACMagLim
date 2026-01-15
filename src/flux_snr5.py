@@ -48,6 +48,7 @@ from scipy.interpolate import interp1d
 from scipy.optimize import root_scalar
 import matplotlib.pyplot as plt
 from scipy import stats
+import logging
 
 # Per-channel no_bgnd values (µJy)
 # NO_BGND_PER_CH = [2.975601012159931, 8.47*1.120, 8.47*1.135, 8.47*1.221]
@@ -72,6 +73,8 @@ def std(data, window_size):
 # ;-----------------------------------------------------------------
 
 def process_all_magnetars(infile, outfile, plot=True):
+    logger = logging.getLogger(__name__)
+    
     df = pd.read_csv(infile, comment='#')
     result_lines = ['# name\tch1_sens5(µJy)\tch2_sens5(µJy)\tch3_sens5(µJy)\tch4_sens5(µJy)']
 
@@ -101,11 +104,16 @@ def process_all_magnetars(infile, outfile, plot=True):
             y_data = stds * const
             x_data = expected[::WINDOW_SIZE] * const
 
+            logger.info(f"Magnetar: {name}, Channel: {ch}")
+            logger.info(f"y_data (sigma ensemble): {y_data}")
+            logger.info(f"x_data (expected flux): {x_data}")
+
             one_shot_line = one_shot_name[one_shot_name['channel'] == ch]
             print(one_shot_line)
 
             # guard: ensure we actually have a matching one-shot row
             if len(one_shot_line) == 0 or one_shot_line['sigma'].isnull().all():
+                logger.warning(f"Missing one-shot sigma for {name}, channel {ch}")
                 print(f"⚠️ Warning: missing one-shot sigma for {name}, channel {ch}")
                 row_result.append(np.nan)
                 continue
@@ -113,9 +121,15 @@ def process_all_magnetars(infile, outfile, plot=True):
             # use positional indexing (.iloc) because the filtered DataFrame
             # preserves original row labels which may not include 0,1,2...
             sigma_5 = 5.0 * float(one_shot_line['sigma'].iloc[0])
-            # print(sigma_5)
+            logger.debug(f"sigma_5 (5 * one_shot_sigma): {sigma_5:.6f}")
 
+            # --- Perform linear regression ---
+            # if len(x_data) >= 2:
             slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
+            logger.info(f"Linear regression results for {name} ch{ch}: Slope={slope:.6f}, Intercept={intercept:.6f}, R-value={r_value:.6f}, P-value={p_value:.6e}, Standard error={std_err:.6f}")
+            # else:
+            #     slope, intercept, r_value, p_value, std_err = np.nan, np.nan, 0, np.nan, np.nan
+            #     logger.warning(f"Insufficient data points for linear regression (only {len(x_data)} points) - setting results to NaN for {name} ch{ch}")
 
             print(f"Slope: {slope}")
             print(f"Intercept: {intercept}")
@@ -123,21 +137,15 @@ def process_all_magnetars(infile, outfile, plot=True):
             print(f"P-value: {p_value}")
             print(f"Standard error: {std_err}")
 
-            # --- If correlation is roughly linear, you can check r_value ---
-            if len(x_data) >= 2:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
-            else:
-                slope, intercept, r_value, std_err = np.nan, np.nan, 0, np.nan
-
             sigma_en_at_5 = slope * sigma_5 + intercept
+            logger.info(f"{name} ch{ch}: Calculated sigma_ensemble@Flux=5*sigma = {sigma_en_at_5:.6f} µJy (slope={slope:.6f} * {sigma_5:.6f} + intercept={intercept:.6f})")
             print(sigma_en_at_5)
-
             print(f"→ {name} ch{ch}: Sigma_ensemble@Flux=5*sigma = {sigma_en_at_5:.2f} µJy")
 
             # --- Optional plotting ---
             if plot:
                 plt.figure(figsize=(7,5))
-                plt.plot(x_data, y_data, 'o', label='Data')
+                plt.plot(x_data, y_data, 'o')
 
                 # plot the linear fit line
                 y_fit = None
@@ -146,43 +154,11 @@ def process_all_magnetars(infile, outfile, plot=True):
                     y_fit = slope * x_fit + intercept
                     plt.plot(x_fit, y_fit, '-', color='orange', linewidth=1.8, label=f'Linear fit')
                 except Exception:
-                    # if fit fails (e.g. x_data all NaN or single value), skip the fit line
                     y_fit = None
                     pass
 
-                # add text labels under the first two data points on the x-axis
-                try:
-                    ax = plt.gca()
-                    # collect y values to compute a reasonable location for labels
-                    y_vals = np.array(y_data, dtype=float)
-                    if y_fit is not None:
-                        y_vals = np.concatenate([y_vals, np.array(y_fit, dtype=float)])
-                    y_min = np.nanmin(y_vals)
-                    y_max = np.nanmax(y_vals)
-                    # fallback if y range is zero
-                    yrange = (y_max - y_min) if (y_max - y_min) != 0 else max(1.0, abs(y_max))
-
-                    # expand bottom of plot so the text is visible
-                    bottom = y_min - 0.12 * yrange
-                    top = y_max + 0.05 * yrange
-                    ax.set_ylim(bottom, top)
-
-                    # add centered text below the first and second x data points
-                    if len(x_data) >= 1:
-                        ax.text(x_data[0], y_min - 0.07 * yrange, r'$3.8\sigma$',
-                                ha='center', va='top', fontsize=9)
-                    if len(x_data) >= 2:
-                        ax.text(x_data[1], y_min - 0.07 * yrange, r'$7\sigma$',
-                                ha='center', va='top', fontsize=9)
-                except Exception:
-                    # non-fatal: if anything goes wrong with labeling, keep going
-                    pass
-
-                plt.axhline(sigma_en_at_5, color='red', linestyle='--', label='Sigma=5')
-                plt.axvline(sigma_5, color='green', linestyle='--',
-                            label=f'Sigma_ensemble@Flux=5*sigma = {sigma_en_at_5:.2f}')
-                plt.title(f"Sigma vs Flux \nMagnetar: {name}, IRAC: {ch}")
-                plt.xlabel("Flux (µJy)")
+                plt.title(f"Simulated Upper Limit Flux \nMagnetar: {name}, IRAC: {ch}")
+                plt.xlabel("Simulated Source Flux (µJy)")
                 plt.ylabel("Sigma Ensemble (uJy)")
                 plt.legend()
                 plt.grid(True)

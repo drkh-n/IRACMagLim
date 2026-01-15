@@ -78,7 +78,8 @@ def place_PSF(image_data, processed_psf_image, x, y):
     image_data[y_start:y_end, x_start:x_end] += processed_psf_image[psf_y_start:psf_y_end, psf_x_start:psf_x_end]
     return image_data
 
-def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False):
+def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False,
+             save_psf=False, outdir="./simulated_psf", filename=None):
     # Initialize PSF object
     psf_obj = PSF(psf_data, channel=channel)
     
@@ -111,12 +112,41 @@ def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False):
         print(f"PSF resampled to shape: {psf_obj.get_psf_image().shape}")
 
     # Normalize PSF (use passed normalization)
-    psf_obj.normalize_psf(norm=norm)
-    if verbose:
-        print(f"PSF normalized. Sum: {np.sum(psf_obj.get_psf_image()):.4f}")
+    # psf_obj.normalize_psf(norm=norm)
+    # if verbose:
+    #     print(f"PSF normalized. Sum: {np.sum(psf_obj.get_psf_image()):.4f}")
+
+    # PSF image after processing
+    psf_img = psf_obj.get_psf_image()
 
     # Return PSF image
-    return psf_obj.get_psf_image()
+    if save_psf:
+        if filename is None:
+            filename = f"PSF_channel{channel}_x{x:.2f}_y{y:.2f}.fits"
+
+        os.makedirs(outdir, exist_ok=True)
+        outpath = os.path.join(outdir, filename)
+
+        hdu = fits.PrimaryHDU(psf_img.astype(np.float32))
+        hdr = hdu.header
+
+        hdr["CHANNEL"] = channel
+        hdr["XSHIFT"] = (x - int(x), "Fractional X shift [pix]")
+        hdr["YSHIFT"] = (y - int(y), "Fractional Y shift [pix]")
+
+        if np.isfinite(norm):
+            hdr["NORM"] = (float(norm), "PSF normalization")
+        else:
+            hdr["NORM"] = (-1.0, "PSF normalization (invalid)")
+            hdr["COMMENT"] = "Original normalization was NaN or Inf"
+            hdr.add_history("Normalization value was NaN or Inf")
+
+        hdu.writeto(outpath, overwrite=True)
+
+        if verbose:
+            print(f"PSF saved to {outpath}")
+
+    return psf_img
 
 def save_grid_plot(sim_images_with_pos, name, channel, norm, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, filename, box_size=50):
     """
@@ -242,6 +272,7 @@ def make_plot(simulated_image, xc, yc, ap_radius, inner_ann_radius, outer_ann_ra
     plt.tight_layout()
     if safe:
         plt.savefig(f"{safe_path}")
+    plt.close(fig)
     # plt.show()
 
 def save_x_profile(image, x_pos, y_pos, channel, name, norm, out_dir=None, half_width=10):

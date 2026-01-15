@@ -14,7 +14,7 @@ import logging
 # Main Execution
 # =======================================================================
 
-def main(plot_enabled , config_file='configs/default.yml', verbose=False):
+def main(config_file='configs/default.yml', verbose=False):
 
     configure_logging()
     logger = logging.getLogger(__name__)
@@ -32,6 +32,9 @@ def main(plot_enabled , config_file='configs/default.yml', verbose=False):
 
     for i in range(len(mag_list['name'])):        
         logger.info(f"Processing target {i+1}/{len(mag_list['name'])}: {mag_list['name'][i]}")
+        ra = mag_list['ra'][i]
+        dec = mag_list['dec'][i]
+        logger.info(f"Reading coordinates for {mag_list['name'][i]}: RA={ra}, DEC={dec}")
         mag_config = {
             'psf_file_path': cfg.prf_path,
             'name': mag_list['name'][i],
@@ -40,8 +43,8 @@ def main(plot_enabled , config_file='configs/default.yml', verbose=False):
             'ap_radius': cfg.rap_cam_pix,
             'inner_ann_radius': cfg.rbackin_cam_pix,
             'outer_ann_radius': cfg.rbackout_cam_pix,
-            'x_coord': mag_list['ra'][i],
-            'y_coord': mag_list['dec'][i],
+            'x_coord': ra,
+            'y_coord': dec,
             'spacing': cfg.spacing,
             'grid': cfg.grid,
             'intermediate_path_file' : cfg.intermediate_path_file
@@ -49,6 +52,8 @@ def main(plot_enabled , config_file='configs/default.yml', verbose=False):
 
         logger.debug(f"Target config: {mag_config}")
         ensemble_photometry(configs=mag_config)
+        # from scripts.visualize_fake_sources import ensemble_photometry
+        # ensemble_photometry(configs=mag_config)
     
     # =======================================================================
     # 7. Calculate SNR=5 fluxes from the photometry results
@@ -60,7 +65,6 @@ def main(plot_enabled , config_file='configs/default.yml', verbose=False):
 if __name__ == "__main__":
     argparse = argparse.ArgumentParser(description="Simulate PSF placement and perform aperture photometry.")
     argparse.add_argument('-i', '--config', type=str, default="configs/default.yml", help="YAML config file with circapphot parameters")
-    argparse.add_argument('--plot', action='store_true', help="Enable plotting of the results.")
     args = argparse.parse_args()
 
-    main(args.plot, args.config)
+    main(args.config)

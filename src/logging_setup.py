@@ -29,4 +29,7 @@ def configure_logging(level: str = 'DEBUG', log_file: str = 'logs/photometrypy.l
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
+    # Suppress verbose matplotlib logging
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 

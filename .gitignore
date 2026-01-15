@@ -1,4 +1,5 @@
 .env
+.venv
 __pycache__
 test*
 simtar_partial
@@ -13,3 +14,4 @@ results/one_shot.csv
 results/photometry/result_1e2259.coldat
 .DS_Store
 logs/*
+simulated_psf

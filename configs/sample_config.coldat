@@ -1,2 +1,2 @@
 # magnetars_list_path_file		intermediate_path_file	data_path_folder			rap_(cam_pix)	rbackin_(cam_pix)		rbackout_(cam_pix)	spacing		prf_path	result_path_file	channels	grid
-./mag_info/mag_folders_dec.coldat		results/photometry/all_phot.coldat		./simtar_partial		2.00	2.2		3.0		2.828	./prf	./results/all_sigma_ensemble.coldat		[1,2,3,4]		3
+./mag_info/CORRECTED_mag_dec.coldat		results/photometry/all_phot.coldat		./simtar_partial		2.00	2.2		3.0		2.828	./prf	./results/all_sigma_ensemble.coldat		[1,2,3,4]		3

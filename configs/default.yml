@@ -6,7 +6,7 @@
 # Input / Output paths
 # -----------------------------------------------------------------------------
 # Path to the list of targets (name, ra, dec)
-magnetars_list_path_file: ./mag_info/mag_folders_dec.coldat
+magnetars_list_path_file: ./mag_info/CORRECTED_mag_dec.coldat
 
 # Directory containing per-target data folders
 data_path_folder: ./simtar_partial
@@ -45,7 +45,7 @@ rbackin_(cam_pix): 2.2
 
 # Outer sky annulus radius
 rbackout_(cam_pix): 3.0
-magnetars_list_path_file: ./mag_info/mag_folders_dec.coldat
+magnetars_list_path_file: ./mag_info/CORRECTED_mag_dec.coldat
 intermediate_path_file: results/photometry/all_phot.coldat
 data_path_folder: ./simtar_partial
 rap_(cam_pix): 2.00
