@@ -56,9 +56,10 @@ def main(config_file='configs/default.yml', verbose=False):
         # ensemble_photometry(configs=mag_config)
     
     # =======================================================================
-    # 7. Calculate SNR=5 fluxes from the photometry results
+    # Calculate SNR=5 fluxes from the photometry results
     logger.info("Combining results and computing SNR=5 fluxes")
     process_all_magnetars(cfg.intermediate_path_file, cfg.result_path_file)
+    
     logger.info("PhotometryPy run completed successfully")
 
     
