@@ -48,7 +48,7 @@ def get_annulus(arr, xc, yc, rin, rout, justdex=False):
     if arr.ndim != 2:
         raise ValueError("Input 'arr' must be a 2D array.")
     if not all(isinstance(val, numbers.Number) for val in [xc, yc, rin, rout]):
-         raise TypeError("xc, yc, rin, and rout must be numbers.")
+        raise TypeError("xc, yc, rin, and rout must be numbers.")
 
     # --- Coordinate Grid Creation ---
     # This is the NumPy equivalent of the nested for-loops in the IDL code.

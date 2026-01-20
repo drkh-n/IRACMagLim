@@ -1,0 +1,29 @@
+# PhotometryPy default configuration
+# Purpose: Defines input paths, photometry parameters, and output locations.
+# Note: Keys are flat (no nesting) for simplicity and compatibility.
+
+# -----------------------------------------------------------------------------
+# Input / Output paths
+# -----------------------------------------------------------------------------
+magnetars_list_path_file: ./mag_info/mag_dec.coldat
+data_path_folder: ./simtar_partial
+prf_path: ./prf
+intermediate_path_file: ./results/photometry/all_phot.coldat
+result_path_file: ./results/all_sigma_ensemble.coldat
+
+
+# -----------------------------------------------------------------------------
+# Simulation parameters
+# -----------------------------------------------------------------------------
+channels: [1, 2, 3, 4] # Channels to process (IRAC bands)
+grid: 3 # Grid size for simulated PRF placements (NxN)
+spacing: 2.828 # Pixel spacing between PRF placement points
+
+
+# -----------------------------------------------------------------------------
+# Aperture photometry radii (camera pixels)
+# -----------------------------------------------------------------------------
+rap_(cam_pix): 2.00 # Aperture radius
+rbackin_(cam_pix): 2.2 # Inner sky annulus radius
+rbackout_(cam_pix): 3.0 # Outer sky annulus radius
+

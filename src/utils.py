@@ -1,17 +1,12 @@
-import argparse
 import os
 import csv
 from astropy.io import fits
-from astropy.wcs import WCS
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
-from psf import PSF
-from idl_circapphot import circ_apphot
-from config import get_configs
-from flux_snr5 import process_all_magnetars
+from src.psf import PSF
 
 
 def get_PSF(psf_file_path, channel=1):
@@ -83,7 +78,8 @@ def place_PSF(image_data, processed_psf_image, x, y):
     image_data[y_start:y_end, x_start:x_end] += processed_psf_image[psf_y_start:psf_y_end, psf_x_start:psf_x_end]
     return image_data
 
-def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False):
+def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False,
+             save_psf=False, outdir="./simulated_psf", filename=None):
     # Initialize PSF object
     psf_obj = PSF(psf_data, channel=channel)
     
@@ -116,12 +112,41 @@ def make_PSF(psf_data, x, y, channel, norm=1.0, verbose=False):
         print(f"PSF resampled to shape: {psf_obj.get_psf_image().shape}")
 
     # Normalize PSF (use passed normalization)
-    psf_obj.normalize_psf(norm=norm)
-    if verbose:
-        print(f"PSF normalized. Sum: {np.sum(psf_obj.get_psf_image()):.4f}")
+    # psf_obj.normalize_psf(norm=norm)
+    # if verbose:
+    #     print(f"PSF normalized. Sum: {np.sum(psf_obj.get_psf_image()):.4f}")
+
+    # PSF image after processing
+    psf_img = psf_obj.get_psf_image()
 
     # Return PSF image
-    return psf_obj.get_psf_image()
+    if save_psf:
+        if filename is None:
+            filename = f"PSF_channel{channel}_x{x:.2f}_y{y:.2f}.fits"
+
+        os.makedirs(outdir, exist_ok=True)
+        outpath = os.path.join(outdir, filename)
+
+        hdu = fits.PrimaryHDU(psf_img.astype(np.float32))
+        hdr = hdu.header
+
+        hdr["CHANNEL"] = channel
+        hdr["XSHIFT"] = (x - int(x), "Fractional X shift [pix]")
+        hdr["YSHIFT"] = (y - int(y), "Fractional Y shift [pix]")
+
+        if np.isfinite(norm):
+            hdr["NORM"] = (float(norm), "PSF normalization")
+        else:
+            hdr["NORM"] = (-1.0, "PSF normalization (invalid)")
+            hdr["COMMENT"] = "Original normalization was NaN or Inf"
+            hdr.add_history("Normalization value was NaN or Inf")
+
+        hdu.writeto(outpath, overwrite=True)
+
+        if verbose:
+            print(f"PSF saved to {outpath}")
+
+    return psf_img
 
 def save_grid_plot(sim_images_with_pos, name, channel, norm, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, filename, box_size=50):
     """
@@ -212,7 +237,7 @@ def save_grid_plot(sim_images_with_pos, name, channel, norm, xc, yc, ap_radius, 
     fig.savefig(filename, dpi=150)
     plt.close(fig)
 
-def make_plot(simulated_image, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius):
+def make_plot(simulated_image, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, safe=False, safe_path=None):
     box_size = 50
     half_box = box_size // 2
     cx, cy = int(xc), int(yc)
@@ -245,7 +270,10 @@ def make_plot(simulated_image, xc, yc, ap_radius, inner_ann_radius, outer_ann_ra
     # Mark the exact center
     ax.plot(sub_cx, sub_cy, marker='+', color='cyan', markersize=10, markeredgewidth=1.5)
     plt.tight_layout()
-    plt.show()
+    if safe:
+        plt.savefig(f"{safe_path}")
+    plt.close(fig)
+    # plt.show()
 
 def save_x_profile(image, x_pos, y_pos, channel, name, norm, out_dir=None, half_width=10):
     """
@@ -326,145 +354,25 @@ def save_results(filename, data):
 
     file_exists = os.path.isfile(filename)
 
-    # Open the file in 'append' mode. 'newline=""' is important to prevent
-    # blank rows from being inserted in Windows.
     with open(filename, 'a', newline='') as csvfile:
-        # Use the csv module to handle proper formatting and quoting
         writer = csv.writer(csvfile)
 
-        # If the file is new, write the header first
         if not file_exists:
             writer.writerow(header_list)
 
-        # Write the data row
         writer.writerow(data)
 
+def save_one_shot(filename, name, phot, sigma, channel):
+    header_list = [
+        'name', 'phot', 'sigma', 'channel'
+    ]
 
+    file_exists = os.path.isfile(filename)
+    data = [name, phot, sigma, channel]
+    with open(filename, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile)
 
+        if not file_exists:
+            writer.writerow(header_list)
 
-# ========================================================================
-# Main Execution
-# =======================================================================
-
-def main(plot_enabled , verbose=False):
-
-    configs = get_configs()
-
-    # Configs
-    x_deg = configs['x_coord']
-    y_deg = configs['y_coord']
-    norms = configs['norms']
-    channels = configs['channels']
-    
-    apcor = [1.125, 1.120, 1.135, 1.221]
-    psize_asec = [1.221, 1.213, 1.222, 1.220]
-
-    for channel in channels:
-        if channel not in [1, 2, 3, 4]:
-            print(f"Invalid channel: {channel}. Must be 1, 2, 3, or 4.")
-            return
-        
-        # =======================================================================
-        # 1. Read PSF and Image data for the channel
-        psf_file_path = configs['psf_file_path'] + f"/apex_sh_IRAC{channel}_col129_row129_x100.fits"
-        target_file_path = configs['image_file_path'] + f"/mosaici{channel}/Combine/mosaic.fits"
-        wcs = WCS(target_file_path) 
-        xc, yc = wcs.wcs_world2pix(x_deg, y_deg, 0)
-        if verbose:
-            print(f"Target coordinates in pixels: x={xc:.2f}, y={yc:.2f}")
-    
-        try:
-            psf_data = get_PSF(psf_file_path, channel=channel)
-        except (FileNotFoundError, RuntimeError) as e:
-            print(f"Error: {e}")
-            return
-        
-        try:
-            image_data = get_Image(target_file_path)
-        except (FileNotFoundError, RuntimeError) as e:
-            print(f"Error: {e}")
-            return
-        
-        # Aperture and annulus sizes in pixels
-        ap_radius = configs['ap_radius'] * (psize_asec[channel-1] / 0.6)
-        inner_ann_radius = configs['inner_ann_radius'] * (psize_asec[channel-1] / 0.6)
-        outer_ann_radius = configs['outer_ann_radius'] * (psize_asec[channel-1] / 0.6)
-
-        # Prepare directory for plots: put plots next to results file in a "plots" directory
-        results_dir = os.path.dirname(configs['save_results']) if os.path.dirname(configs['save_results']) else '.'
-        plots_dir = os.path.join(results_dir, 'plots')
-
-        for norm in norms:
-            sim_images_with_pos = []
-            for ii in range(configs['grid']):
-                for jj in range(configs['grid']):
-                    x_offset = (ii - 1) * configs['spacing']
-                    y_offset = (jj - 1) * configs['spacing']
-                    x_pos = xc + x_offset
-                    y_pos = yc + y_offset
-
-                    # ========================================================================
-                    # 2. Place PRF at specified coordinates in a copy of the image so
-                    #    successive placements don't accumulate on the same image
-                    processed_psf_image = make_PSF(psf_data, x_pos, y_pos, channel, norm, verbose=verbose)
-                    simulated_image = image_data.copy()
-                    simulated_image = place_PSF(simulated_image, processed_psf_image, x_pos, y_pos)
-
-                    # Save simulated image and position for later plotting
-                    sim_images_with_pos.append((simulated_image, x_pos, y_pos))
-
-                    # ========================================================================
-                    # 3. Perform Circular Aperture Photometry
-                    try:
-                        result = circ_apphot(
-                            simulated_image, x_pos, y_pos, ap_radius, 1.0,
-                            bgndwidth=outer_ann_radius-inner_ann_radius,
-                            quiet=verbose, rbackin=inner_ann_radius
-                        )
-                        print(f"Photometry result: {result['total_counts'] * apcor[channel-1] * 8.47}")
-                        print(f"Photometric error (sigma): {result['sigma'] * apcor[channel-1] * 8.47}")
-                    except Exception as e:
-                        print(f"Error in aperture photometry: {e}")
-                        return
-
-                    # =======================================================================
-                    # 4. Save results to CSV
-                    save_results(configs['save_results'],
-                        [
-                            configs['name'],
-                            x_deg,
-                            y_deg,
-                            channel,
-                            x_pos,
-                            y_pos,
-                            norm,
-                            result['total_counts'] * apcor[channel-1] * 8.47,
-                            result['sigma'] * apcor[channel-1] * 8.47
-                        ])
-                    
-                    # =======================================================================
-                    # 5. Save X profile plot
-                    try:
-                        out_fname = save_x_profile(simulated_image, x_pos, y_pos, channel, configs['name'], norm, out_dir=f"{plots_dir}/profiles/simulated/")
-                        max_idx = np.unravel_index(np.argmax(processed_psf_image), processed_psf_image.shape)
-                        out_fname = save_x_profile(processed_psf_image, max_idx[0], max_idx[1], channel, "processed_psf", norm, out_dir=f"{plots_dir}/profiles/processed_psf/")
-                        if verbose:
-                            print(f"Saved X profile plot to {out_fname}")
-                    except Exception as e:
-                        print(f"Error saving X profile plot: {e}")
-
-            # =======================================================================
-            # 6. Save grid plot of all simulated images with apertures/annuli
-            out_fname = os.path.join(f"{plots_dir}/grids", f"{configs['name']}_ch{channel}_norm{norm}.png")
-            save_grid_plot(sim_images_with_pos, configs['name'], channel, norm, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, out_fname)
-                    
-    # =======================================================================
-    # 7. Calculate SNR=5 fluxes from the photometry results
-    process_all_magnetars(configs['save_results'], 'sensitivity_results.coldat')
-
-    
-if __name__ == "__main__":
-    argparse = argparse.ArgumentParser(description="Simulate PSF placement and perform aperture photometry.")
-    argparse.add_argument('--plot', action='store_true', help="Enable plotting of the results.")
-    args = argparse.parse_args()
-    main(args.plot)
+        writer.writerow(data)
