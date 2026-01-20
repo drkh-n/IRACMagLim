@@ -66,7 +66,11 @@ def test(config_file='configs/default.yml', verbose=False):
     total_bkg = bkg_mean * aperture_area
     total_flux = raw_flux - total_bkg
 
+    pixsig = aperstats.stddev
+    npix = 
+
     print(f"Flux = {total_flux[0]:.4f}")
+    print(f"Error: ")
 
     exit()
 

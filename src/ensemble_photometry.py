@@ -41,7 +41,8 @@ def ensemble_photometry(configs, verbose=False):
 
         if verbose:
             print(f"Target coordinates in pixels: x={xc:.2f}, y={yc:.2f}")
-    
+
+        # 1.2 load PSF and Image data
         try:
             psf_data = get_PSF(psf_file_path, channel=channel)
         except (FileNotFoundError, RuntimeError) as e:
@@ -56,11 +57,14 @@ def ensemble_photometry(configs, verbose=False):
             print(f"Error: {e}")
             continue
         
-        # Aperture and annulus sizes in pixels
+        # =======================================================================
+        # 2. Aperture and annulus sizes in pixels
         ap_radius = configs['ap_radius'] * (PSIZE_ASEC[channel-1] / 0.6)
         inner_ann_radius = configs['inner_ann_radius'] * (PSIZE_ASEC[channel-1] / 0.6)
         outer_ann_radius = configs['outer_ann_radius'] * (PSIZE_ASEC[channel-1] / 0.6)
 
+        # =======================================================================
+        # 3. Perform one-shot aperture photometry at target location
         try:
             result = circ_apphot(
                 image_data, xc+0., yc+0., ap_radius, 1.0,
@@ -71,6 +75,11 @@ def ensemble_photometry(configs, verbose=False):
             phot_flux_ujy = result['total_counts'] * APCOR[channel-1] * 8.47
             phot_sigma_ujy = result['sigma'] * APCOR[channel-1] * 8.47
             logger.info(f"One-shot photometry for {configs['name']} ch{channel}: pixel_coords=({xc:.2f}, {yc:.2f}), total_counts={result['total_counts']:.6f}, sigma={result['sigma']:.6f}, flux={phot_flux_ujy:.6f} µJy, sigma={phot_sigma_ujy:.6f} µJy")
+            # 3.1 Save one-shot photometry result
+            one_shot_file = 'results/all_one_shot.csv'
+            save_one_shot(one_shot_file, configs['name'], result['total_counts']*APCOR[channel-1]*8.47, result['sigma']*APCOR[channel-1]*8.47, channel)
+            # 3.2 Save one-shot plot
+            make_plot(image_data, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, safe=True, safe_path=f"plots/{configs['name']}_ch{channel}.png")
             if verbose:
                 print(f"Photometry result: {phot_flux_ujy}")
                 print(f"Photometric error (sigma): {phot_sigma_ujy}")
@@ -79,18 +88,13 @@ def ensemble_photometry(configs, verbose=False):
             print(f"Error in aperture photometry: {e}")
             continue
 
-        one_shot_file = 'results/all_one_shot.csv'
-        save_one_shot(one_shot_file, configs['name'], result['total_counts']*APCOR[channel-1]*8.47, result['sigma']*APCOR[channel-1]*8.47, channel)
-
-        make_plot(image_data, xc, yc, ap_radius, inner_ann_radius, outer_ann_radius, safe=True, safe_path=f"plots/{configs['name']}_ch{channel}.png")
 
         # Prepare directory for plots: put plots next to results file in a "plots" directory
         # results_dir = os.path.dirname(configs['result_path_file']) if os.path.dirname(configs['result_path_file']) else '.'
         # plots_dir = os.path.join('results', 'plots')
         
-        measured_sigma = result['sigma']
-        print(measured_sigma)
-        
+        # =======================================================================
+        # 4. Ensemble Photometry: simulate PRF placements on a grid with varying scales
         scales = FACTORS * result['sigma']
         logger.info(f"Starting ensemble photometry for {configs['name']} ch{channel}: scales={scales}, grid={configs['grid']}x{configs['grid']}, spacing={configs['spacing']}")
         sim_images_with_pos = []
@@ -98,20 +102,22 @@ def ensemble_photometry(configs, verbose=False):
         for scale in scales:
             for ii in range(configs['grid']):
                 for jj in range(configs['grid']):
+                    # ========================================================================
+                    # 4.1 Calculate position offsets for grid placement
                     x_offset = (ii - 1) * configs['spacing']
                     y_offset = (jj - 1) * configs['spacing']
                     x_pos = xc + x_offset
                     y_pos = yc + y_offset
 
                     # ========================================================================
-                    # 2. Place PRF at specified coordinates in a copy of the image so
+                    # 4.2 Place PRF at specified coordinates in a copy of the image so
                     #    successive placements don't accumulate on the same image
                     processed_psf_image = make_PSF(psf_data, x_pos, y_pos, channel, scale, verbose=verbose, save_psf=True, filename=f"{configs['name']}_ch{channel}.fits")
                     simulated_image = image_data.copy()
                     simulated_image = place_PSF(simulated_image, processed_psf_image, x_pos, y_pos)
 
                     # ========================================================================
-                    # 3. Perform Circular Aperture Photometry
+                    # 4.3 Perform Circular Aperture Photometry
                     try:
                         result = circ_apphot(
                             simulated_image, x_pos, y_pos, ap_radius, 1.0,
@@ -123,6 +129,20 @@ def ensemble_photometry(configs, verbose=False):
                         phot_sigma_ujy = result['sigma'] * APCOR[channel-1] * 8.47
                         logger.info(f"Ensemble photometry {ensemble_count} for {configs['name']} ch{channel}: scale={scale:.6f}, pixel_coords=({x_pos:.2f}, {y_pos:.2f}), total_counts={result['total_counts']:.6f}, sigma={result['sigma']:.6f}, flux={phot_flux_ujy:.6f} µJy, sigma={phot_sigma_ujy:.6f} µJy")
                         sim_images_with_pos.append((simulated_image, x_pos, y_pos))
+                        # =======================================================================
+                        # 4.4 Save results to CSV
+                        save_results(configs['intermediate_path_file'],
+                            [
+                                configs['name'],
+                                x_deg,
+                                y_deg,
+                                channel,
+                                x_pos,
+                                y_pos,
+                                scale,
+                                result['total_counts'],
+                                result['sigma']
+                            ])
                         if verbose:
                             print(f"Photometry result: {phot_flux_ujy}")
                             print(f"Photometric error (sigma): {phot_sigma_ujy}")
@@ -131,20 +151,6 @@ def ensemble_photometry(configs, verbose=False):
                         print(f"Error in aperture photometry: {e}")
                         continue
 
-                    # =======================================================================
-                    # 4. Save results to CSV
-                    save_results(configs['intermediate_path_file'],
-                        [
-                            configs['name'],
-                            x_deg,
-                            y_deg,
-                            channel,
-                            x_pos,
-                            y_pos,
-                            scale,
-                            result['total_counts'],
-                            result['sigma']
-                        ])
                     
                     # =======================================================================
                     # 5. Save X profile plot
