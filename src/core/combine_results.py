@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results"
 CSV_INPUT = RESULTS_DIR / "all_one_shot.csv"
 COLDAT_INPUT = RESULTS_DIR / "all_sigma_ensemble.coldat"
-OUTPUT = RESULTS_DIR / "combined_result_2_061125.coldat"
+OUTPUT = RESULTS_DIR / "sigma_5_limit.coldat"
 
 # Desired output columns
 OUTPUT_COLUMNS = [

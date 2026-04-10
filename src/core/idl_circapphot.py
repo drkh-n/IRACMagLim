@@ -77,7 +77,7 @@ def get_annulus(arr, xc, yc, rin, rout, justdex=False):
         return arr[mask]
 
 
-def circ_apphot(im, xc, yc, raper, t_exp, bgndwidth, quiet, rbackin):
+def circ_apphot(im, xc, yc, raper, t_exp=1.0, bgndwidth=5, quiet=False, rbackin=None):
     """
     Performs circular aperture photometry.
 
@@ -123,8 +123,8 @@ def circ_apphot(im, xc, yc, raper, t_exp, bgndwidth, quiet, rbackin):
         raise TypeError("Input 'im' must be a NumPy array.")
     if im.ndim != 2:
         raise ValueError("Input 'im' must be a 2D array.")
-    if not all(isinstance(val, numbers.Number) for val in [xc, yc, raper, t_exp]):
-         raise TypeError("xc, yc, raper, and t_exp must be numbers.")
+    if not all(isinstance(val, numbers.Number) for val in [xc, yc, raper]):
+         raise TypeError("xc, yc, raper must be numbers.")
 
     if not quiet:
         print('Photometry taken with approx. circular apertures and edge backgrounds.')
