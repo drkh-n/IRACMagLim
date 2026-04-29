@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iracmaglim"
+version = "0.1.0"
+description = "Photometry pipeline for magnetars"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Darkhan Nurzhakyp", email = "darkhan.nurzhakyp@nu.edu.kz" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "astropy",
+    "scipy",
+    "photutils",
+    "pyyaml",
+    "matplotlib",
+    "tqdm"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "flake8",
+    "black",
+    "isort",
+    "mypy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]  # This will include core, config, utils as packages if they have __init__.py
+
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.black]
+line_length = 88

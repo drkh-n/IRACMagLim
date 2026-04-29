@@ -1,17 +1,65 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ──────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Build / packaging ─────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+
+# ── Testing & coverage ────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+test*/
+
+# ── Environment / secrets ─────────────────────────────────────────────────
 .env
-.venv
-__pycache__
-test*
-simtar_partial
-prf
-plots
-1e2259+586
-sensitivity_results.coldat
-src/benchmark.py
-src/__pycache__
-results/old
-results/one_shot.csv
-results/photometry/result_1e2259.coldat
+.env.*
+
+# ── Logs ─────────────────────────────────────────────────────────────────
+logs/
+
+# ── OS artefacts ──────────────────────────────────────────────────────────
 .DS_Store
-logs/*
-simulated_psf
+Thumbs.db
+
+# ── Large science data (not versioned — too large / proprietary) ──────────
+simtar_partial/       # Spitzer FITS mosaics per target (~GB)
+prf/                  # APEX PRF FITS files
+iracpars/             # IRAC parameter tables
+iracphpadu/           # IRAC electrons-per-ADU tables
+simulated_psf/        # intermediate PSF products
+
+# ── Generated plots (reproducible from scripts/) ──────────────────────────
+plots/
+
+# ── Results / output data (keep CSVs, ignore old/intermediate files) ──────
+results/old/
+results/photometry/result_1e2259.coldat
+results/one_shot.csv
+sensitivity_results.coldat
+combined_result_*.coldat
+output.coldat
+
+# ── Graphify knowledge graph (generated, not source) ─────────────────────
+graphify-out/
+.graphifyignore.txt
+
+# ── Thesis documents (track in separate repo or share separately) ─────────
+Literature_review.md
+references.bib
+
+# ── Scratch / legacy ─────────────────────────────────────────────────────
+src/benchmark.py
+src/__pycache__/
+1e2259+586

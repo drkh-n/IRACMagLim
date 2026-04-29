@@ -8,30 +8,46 @@ import logging
 @dataclass
 class AppConfig:
     magnetars_list_path_file: str
-    intermediate_path_file: str
     data_path_folder: str
     rap_cam_pix: float
     rbackin_cam_pix: float
     rbackout_cam_pix: float
     spacing: float
     prf_path: str
-    result_path_file: str
+    ensemble_phot_data: str
+    one_shot_phot_data: str
+    output_formats: List[str]
+    uJy_units: bool
+    output_file: str
     channels: List[int]
     grid: int
+    photometry_method: str = 'circ_apphot'
+    save_plots: bool = False
+    # Whether to run the ensemble PRF injection simulation (True) or only one-shot photometry.
+    start_sim: bool = True
+    # Pixels to trim from each edge of the raw APEX PRF before downsampling.
+    psf_trim_pixels: int = 50
 
     def as_dict(self) -> Dict[str, Any]:
         return {
             'magnetars_list_path_file': self.magnetars_list_path_file,
-            'intermediate_path_file': self.intermediate_path_file,
             'data_path_folder': self.data_path_folder,
             'rap_(cam_pix)': self.rap_cam_pix,
             'rbackin_(cam_pix)': self.rbackin_cam_pix,
             'rbackout_(cam_pix)': self.rbackout_cam_pix,
             'spacing': self.spacing,
             'prf_path': self.prf_path,
-            'result_path_file': self.result_path_file,
+            'ensemble_phot_data': self.ensemble_phot_data,
+            'one_shot_phot_data': self.one_shot_phot_data,
+            'output_formats': self.output_formats,
+            'uJy_units': self.uJy_units,
+            'output_file': self.output_file,
             'channels': self.channels,
             'grid': self.grid,
+            'photometry_method': self.photometry_method,
+            'save_plots': self.save_plots,
+            'start_sim': self.start_sim,
+            'psf_trim_pixels': self.psf_trim_pixels,
         }
 
 
@@ -39,9 +55,9 @@ def _validate_and_normalize(raw: Dict[str, Any]) -> AppConfig:
     logger = logging.getLogger(__name__)
     logger.debug("Validating YAML configuration and normalizing types")
     required_keys = [
-        'magnetars_list_path_file', 'intermediate_path_file', 'data_path_folder',
+        'magnetars_list_path_file', 'data_path_folder',
         'rap_(cam_pix)', 'rbackin_(cam_pix)', 'rbackout_(cam_pix)', 'spacing',
-        'prf_path', 'result_path_file', 'channels', 'grid'
+        'prf_path', 'channels', 'grid'
     ]
 
     missing = [k for k in required_keys if k not in raw]
@@ -76,6 +92,14 @@ def _validate_and_normalize(raw: Dict[str, Any]) -> AppConfig:
     except Exception as exc:
         logger.error("grid must be an integer", exc_info=True)
         raise ValueError(f"grid must be an integer: {exc}")
+
+    # photometry_method
+    photometry_method = raw.get('photometry_method', 'circ_apphot').lower()
+    if photometry_method not in ['circ_apphot', 'photutils']:
+        logger.warning(
+            f"Unknown photometry_method '{photometry_method}', defaulting to 'circ_apphot'"
+        )
+        photometry_method = 'circ_apphot'
 
     # Value validations
     errors: List[str] = []
@@ -115,16 +139,23 @@ def _validate_and_normalize(raw: Dict[str, Any]) -> AppConfig:
 
     cfg = AppConfig(
         magnetars_list_path_file=str(raw['magnetars_list_path_file']),
-        intermediate_path_file=str(raw['intermediate_path_file']),
         data_path_folder=str(raw['data_path_folder']),
         rap_cam_pix=rap,
         rbackin_cam_pix=rbi,
         rbackout_cam_pix=rbo,
         spacing=spacing,
         prf_path=str(raw['prf_path']),
-        result_path_file=str(raw['result_path_file']),
+        ensemble_phot_data=str(raw.get('ensemble_phot_data', raw.get('intermediate_path_file', 'results/photometry/ensemble_data'))),
+        one_shot_phot_data=str(raw.get('one_shot_phot_data', 'results/photometry/one_shot_data')),
+        output_formats=raw.get('output_formats', ['csv']),
+        uJy_units=raw.get('uJy_units', True),
+        output_file=str(raw.get('output_file', raw.get('result_path_file', 'results/output'))),
         channels=channels,
         grid=grid,
+        photometry_method=photometry_method,
+        save_plots=bool(raw.get('save_plots', False)),
+        start_sim=bool(raw.get('start_sim', True)),
+        psf_trim_pixels=int(raw.get('psf_trim_pixels', 50)),
     )
     logger.debug(f"Normalized configuration: {cfg.as_dict()}")
     return cfg

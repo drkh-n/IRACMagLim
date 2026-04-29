@@ -3,7 +3,7 @@ import os
 from logging.handlers import RotatingFileHandler
 
 
-def configure_logging(level: str = 'DEBUG', log_file: str = 'logs/photometrypy.log') -> None:
+def configure_logging(level: str = 'DEBUG', log_file: str = 'logs/iracmaglim.log') -> None:
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     root = logging.getLogger()
@@ -24,7 +24,7 @@ def configure_logging(level: str = 'DEBUG', log_file: str = 'logs/photometrypy.l
     console.setFormatter(formatter)
     root.addHandler(console)
 
-    file_handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
+    file_handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding='utf-8', mode='w')
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)

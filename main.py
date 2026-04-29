@@ -1,71 +1,136 @@
 import argparse
+import logging
+import sys
+
 import pandas as pd
 
+from src.config.loader import load_yaml_config
+from src.core.analysis import process_all_magnetars
+from src.core.photometry import (
+    ENSEMBLE_HEADERS,
+    ONE_SHOT_HEADERS,
+    EnsemblePhotometry,
+    EnsemblePhotometryConfig,
+)
+from src.utils.custom_logger import configure_logging
+from src.utils.io import save_rows
 
 
-from src.config import load_yaml_config
-from src.flux_snr5 import process_all_magnetars
-from src.ensemble_photometry import ensemble_photometry
-from src.logging_setup import configure_logging
-import logging
-            
+def setup_logger(level: str = 'INFO') -> logging.Logger:
+    try:
+        configure_logging(level=level)
+        return logging.getLogger(__name__)
+    except Exception as e:
+        print(f"Error setting up logging: {e}", file=sys.stderr)
+        sys.exit(1)
 
-# ========================================================================
-# Main Execution
-# =======================================================================
 
-def main(config_file='configs/default.yml', verbose=False):
+def main(config_file: str = 'configs/default.yml', verbose: bool = False) -> None:
+    log_level = 'DEBUG' if verbose else 'INFO'
+    logger = setup_logger(level=log_level)
+    logger.info("Starting IRACMagLim run")
 
-    configure_logging()
-    logger = logging.getLogger(__name__)
-    logger.info("Starting PhotometryPy run")
-    logger.debug(f"Loading config from {config_file}")
+    # ── Load configuration ─────────────────────────────────────────────
+    try:
+        cfg = load_yaml_config(filename=config_file)
+        logger.debug(f"Loaded configuration: {cfg.as_dict()}")
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Configuration error: {e}")
+        return
 
-    cfg = load_yaml_config(filename=config_file)
-    logger.debug(f"Loaded configuration: {cfg.as_dict()}")
-    mag_path = cfg.magnetars_list_path_file
+    # ── Read target list ───────────────────────────────────────────────
+    try:
+        mag_list = pd.read_csv(
+            cfg.magnetars_list_path_file,
+            comment='#', sep=r'\s+',
+            names=['name', 'ra', 'dec'],
+        )
+        logger.info(f"Found {len(mag_list)} targets")
+    except OSError as e:
+        logger.error(f"Cannot read target list: {e}")
+        return
 
-    logger.debug(f"Reading magnetar list from {mag_path}")
-    mag_list = pd.read_csv(mag_path, comment='#', sep='\s+',
-                           names=['name','ra','dec'])
-    logger.info(f"Found {len(mag_list['name'])} targets to process")
+    # ── Determine output paths ─────────────────────────────────────────
+    ensemble_base = cfg.ensemble_phot_data
+    one_shot_base = cfg.one_shot_phot_data
+    limit_outfile = (
+        cfg.output_file
+        if cfg.output_file.endswith(('.coldat', '.txt', '.csv'))
+        else cfg.output_file + '.coldat'
+    )
 
-    for i in range(len(mag_list['name'])):        
-        logger.info(f"Processing target {i+1}/{len(mag_list['name'])}: {mag_list['name'][i]}")
-        ra = mag_list['ra'][i]
-        dec = mag_list['dec'][i]
-        logger.info(f"Reading coordinates for {mag_list['name'][i]}: RA={ra}, DEC={dec}")
-        mag_config = {
-            'psf_file_path': cfg.prf_path,
-            'name': mag_list['name'][i],
-            'image_file_path': cfg.data_path_folder+'/'+mag_list['name'][i],
-            'channels': cfg.channels,
-            'ap_radius': cfg.rap_cam_pix,
-            'inner_ann_radius': cfg.rbackin_cam_pix,
-            'outer_ann_radius': cfg.rbackout_cam_pix,
-            'x_coord': ra,
-            'y_coord': dec,
-            'spacing': cfg.spacing,
-            'grid': cfg.grid,
-            'intermediate_path_file' : cfg.intermediate_path_file
-        }
+    # Remove stale output files so save_rows starts fresh.
+    import os
+    for base in (ensemble_base, one_shot_base):
+        for fmt in cfg.output_formats:
+            path = f"{base}.{fmt}"
+            if os.path.exists(path):
+                os.remove(path)
+                logger.info(f"Removed existing file: {path}")
 
-        logger.debug(f"Target config: {mag_config}")
-        ensemble_photometry(configs=mag_config)
-        # from scripts.visualize_fake_sources import ensemble_photometry
-        # ensemble_photometry(configs=mag_config)
-    
-    # =======================================================================
-    # Calculate SNR=5 fluxes from the photometry results
-    logger.info("Combining results and computing SNR=5 fluxes")
-    process_all_magnetars(cfg.intermediate_path_file, cfg.result_path_file)
-    
-    logger.info("PhotometryPy run completed successfully")
+    # ── Per-target photometry ──────────────────────────────────────────
+    total = len(mag_list)
+    for i, row in mag_list.iterrows():
+        name, ra, dec = row['name'], row['ra'], row['dec']
+        logger.info(f"Processing {i+1}/{total}: {name}  RA={ra}  Dec={dec}")
 
-    
+        ensemble_cfg = EnsemblePhotometryConfig(
+            name=name,
+            x_coord=ra,
+            y_coord=dec,
+            channels=cfg.channels,
+            psf_file_path=cfg.prf_path,
+            image_file_path=f"{cfg.data_path_folder}/{name}",
+            ap_radius=cfg.rap_cam_pix,
+            inner_ann_radius=cfg.rbackin_cam_pix,
+            outer_ann_radius=cfg.rbackout_cam_pix,
+            grid=cfg.grid,
+            spacing=cfg.spacing,
+            output_formats=cfg.output_formats,
+            uJy_units=cfg.uJy_units,
+            photometry_method=cfg.photometry_method,
+            save_plots=cfg.save_plots,
+            start_sim=cfg.start_sim,
+            psf_trim_pixels=cfg.psf_trim_pixels,
+        )
+
+        try:
+            result = EnsemblePhotometry(ensemble_cfg, verbose=verbose).run()
+        except Exception as e:
+            logger.error(f"Unexpected error for {name}: {e}", exc_info=True)
+            continue
+
+        # Write this target's rows immediately (append mode) so partial
+        # results are preserved even if a later target fails.
+        if result.one_shot_rows:
+            save_rows(one_shot_base, result.one_shot_rows,
+                      cfg.output_formats, ONE_SHOT_HEADERS, mode='a')
+        if result.ensemble_rows:
+            save_rows(ensemble_base, result.ensemble_rows,
+                      cfg.output_formats, ENSEMBLE_HEADERS, mode='a')
+
+    # ── Compute 5σ limits ─────────────────────────────────────────────
+    input_limit_file = (
+        ensemble_base + '.csv' if 'csv' in cfg.output_formats
+        else ensemble_base + '.coldat'
+    )
+    try:
+        logger.info("Computing 5σ limits from ensemble photometry results")
+        process_all_magnetars(input_limit_file, limit_outfile, grid=cfg.grid)
+    except Exception as e:
+        logger.error(f"Error computing 5σ limits: {e}", exc_info=True)
+        return
+
+    logger.info("IRACMagLim run completed successfully")
+
+
 if __name__ == "__main__":
-    argparse = argparse.ArgumentParser(description="Simulate PSF placement and perform aperture photometry.")
-    argparse.add_argument('-i', '--config', type=str, default="configs/default.yml", help="YAML config file with circapphot parameters")
-    args = argparse.parse_args()
-
-    main(args.config)
+    parser = argparse.ArgumentParser(
+        description="Ensemble aperture photometry for Spitzer IRAC magnetar upper limits."
+    )
+    parser.add_argument('-i', '--config', default='configs/default.yml',
+                        help="YAML configuration file")
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help="Enable DEBUG logging")
+    args = parser.parse_args()
+    main(args.config, verbose=args.verbose)

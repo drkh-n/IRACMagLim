@@ -1,0 +1,43 @@
+# PhotometryPy test configuration
+# Purpose: Defines input paths, photometry parameters, and output locations.
+# Note: Keys are flat (no nesting) for simplicity and compatibility.
+
+# -----------------------------------------------------------------------------
+# Input / Output paths
+# -----------------------------------------------------------------------------
+magnetars_list_path_file: ./mag_info/4u0142.coldat
+data_path_folder: ./simtar_partial
+prf_path: ./prf
+
+output_formats: ['coldat', 'csv']
+uJy_units: true # converts and saves photometry data in uJy
+one_shot_phot_data: ./results/photometry/one_shot_data
+ensemble_phot_data: ./results/photometry/ensemble_data
+output_file: ./results/output
+
+# -----------------------------------------------------------------------------
+# Ensemble parameters
+# -----------------------------------------------------------------------------
+channels: [1, 2, 3, 4]         # Channels to process (IRAC bands)
+grid: 3                        # Grid size for simulated PRF placements (NxN)
+spacing: 2.828                 # Pixel spacing between PRF placement points
+photometry_method: circ_apphot # 'circ_apphot' (default), 'photutils'
+# if photutils method is chosen, optionally, can choose its built-in methods by uncommenting the next line
+# photutils_method: exact,     # 'exact' (default), 'center', 'subpixel' 
+
+# -----------------------------------------------------------------------------
+# Aperture photometry radii (camera pixels)
+# -----------------------------------------------------------------------------
+rap_(cam_pix): 2.00     # Aperture radius
+rbackin_(cam_pix): 2.2  # Inner sky annulus radius
+rbackout_(cam_pix): 3.0 # Outer sky annulus radius
+
+# -----------------------------------------------------------------------------
+# Saving plots and simulated PSF (as fits) (optional)
+# -----------------------------------------------------------------------------
+save_one_shot_plot: false     # saves one shot image
+save_one_shot_profile: false  # saves X profile from one-shot
+save_ensemble_plot: false     # saves all simulated images into one plot
+save_ensemble_profiles: false # saves all X profiles in one plot 
+
+save_sim_psf: false           # saves rescaled PSF as fits file
