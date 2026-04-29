@@ -28,7 +28,7 @@ def setup_logger(level: str = 'INFO') -> logging.Logger:
 def main(config_file: str = 'configs/default.yml', verbose: bool = False) -> None:
     log_level = 'DEBUG' if verbose else 'INFO'
     logger = setup_logger(level=log_level)
-    logger.info("Starting PhotometryPy run")
+    logger.info("Starting IRACMagLim run")
 
     # ── Load configuration ─────────────────────────────────────────────
     try:
@@ -121,7 +121,7 @@ def main(config_file: str = 'configs/default.yml', verbose: bool = False) -> Non
         logger.error(f"Error computing 5σ limits: {e}", exc_info=True)
         return
 
-    logger.info("PhotometryPy run completed successfully")
+    logger.info("IRACMagLim run completed successfully")
 
 
 if __name__ == "__main__":

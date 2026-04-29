@@ -1,186 +1,149 @@
-## PhotometryPy
+# IRACMagLim
 
-Ensemble aperture photometry pipeline for computing 5σ flux upper limits on Spitzer/IRAC magnetar observations.
+**Ensemble PRF-injection photometry pipeline for Spitzer/IRAC magnetar 5σ flux limits.**
 
-## Overview
+Developed as part of an MSc thesis at Nazarbayev University: *"Photometry of Magnetars in Spitzer Telescope Infrared Images"* (Darkhan Nurzhakyp, 2026).
 
-PhotometryPy processes mosaicked infrared images (Spitzer IRAC-like) to estimate per-channel photometric sensitivity limits. For each target the pipeline:
+---
 
-1. Runs one-shot circular aperture photometry at the target sky position.
-2. Injects PRFs at a grid of positions around the target at multiple flux levels (ensemble simulation).
-3. Computes the 5σ upper limit as `5 × mean(σ_ensemble)` across all injection levels, where `σ_ensemble` is the standard deviation of recovered fluxes within each injection level group.
+## Scientific context
 
-Key features:
-- Two photometry backends: custom `circ_apphot` (IDL-ported) or `photutils`.
-- Ensemble PRF injection controlled by `grid`, `spacing`, and `psf_trim_pixels`.
-- Results written in configurable formats (`.csv` and/or `.coldat`).
-- Partial results preserved per-target: if a later target fails, earlier results are already on disk.
+Magnetars are neutron stars with surface magnetic fields of 10¹⁴–10¹⁵ G whose mid-infrared emission distinguishes two competing physical models — a passive supernova fallback dust disk (predicting a rising IR SED, α > 0) versus non-thermal magnetospheric radiation (α < 0). Only two magnetars have confirmed Spitzer/IRAC detections. For the rest, the archival data constrain only upper limits.
+
+Standard photometry tools (MOPEX/APEX) fail in crowded Galactic-plane fields because confusion noise — not photon statistics — limits sensitivity. IRACMagLim bypasses source detection entirely: it measures flux at the known X-ray position and characterises the local noise empirically by injecting synthetic PRFs at nearby positions in the real mosaic.
+
+## Key results
+
+- **27 magnetars** processed across all four IRAC channels (3.6, 4.5, 5.8, 8.0 µm)
+- **5σ limits** span > 3 orders of magnitude: ~10 µJy (1E 2259+586) to ~34,700 µJy (SGR 1806−20), driven entirely by background confusion
+- **Spectral index** α₂₄ = −0.49 ± 0.07 for 4U 0142+61, ruling out a passive dust disk and consistent with the JWST measurement of α = −0.96 (Hare et al. 2024)
+- **5 priority JWST targets** with F₅σ(4.5 µm) < 200 µJy identified for MIRI follow-up
+
+---
 
 ## Quick start
 
-1. Create a Python environment and install the package in editable mode:
-
 ```bash
-python -m venv .venv
-# Activate the virtual environment:
-# On Windows: .venv\Scripts\activate
-# On macOS/Linux: source .venv/bin/activate
-
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .[dev]
+pytest                                               # verify installation
+python main.py -i configs/default.yml               # run pipeline
+python main.py -i configs/default.yml -v            # verbose / DEBUG logging
 ```
 
-2. Run the tests to verify the installation:
+---
 
-```bash
-pytest
+## How it works
+
+For each target and IRAC channel the pipeline does three things:
+
+1. **One-shot photometry** — forced circular aperture photometry at the known X-ray position (RA/Dec → mosaic pixel via `astropy.wcs`).
+
+2. **Ensemble PRF injection** — the APEX PRF is trimmed, sub-pixel shifted, rebinned to mosaic scale, and injected at each position in a 3×3 grid centred on the target at two flux levels bracketing the expected 5σ threshold. Aperture photometry is run on each simulated image and the recovered fluxes are collected.
+
+3. **5σ limit** — the standard deviation of recovered fluxes within each injection level defines σ_ens; the limit is `F_5σ = 5 × mean(σ_ens)` over both levels.
+
+```
+σ_ens(F_inj) = std({ F_i^meas − F_inj }_{i=1}^{9})
+F_5σ = 5 × mean_k(σ_ens(F_inj,k))
 ```
 
-3. Edit `configs/default.yml` to set your data paths and photometry parameters.
-
-4. Run the pipeline:
-
-```bash
-python main.py -i configs/default.yml
-```
-
-Add `-v` to enable DEBUG-level logging:
-
-```bash
-python main.py -i configs/default.yml -v
-```
+---
 
 ## Project layout
 
 ```
-PhotometryPy/
-├── main.py                        # Entry point
-├── pyproject.toml                 # Build system and dependencies
+IRACMagLim/
+├── main.py                   # CLI entry point
+├── pyproject.toml
 ├── configs/
-│   └── default.yml                # Default configuration
-├── mag_info/                      # Target list files (name RA DEC)
-├── prf/                           # APEX PRF FITS files
-├── simtar_partial/                # Per-target mosaics
-├── results/                       # Output files
-│   └── photometry/                # Intermediate per-target results
-├── plots/                         # Diagnostic plots (if save_plots: true)
-└── src/
-    ├── config/
-    │   └── loader.py              # YAML loader, AppConfig dataclass, validation
-    ├── core/
-    │   ├── photometry.py          # EnsemblePhotometry class and perform_photometry()
-    │   ├── analysis.py            # process_all_magnetars(): 5σ limit computation
-    │   ├── idl_circapphot.py      # Aperture photometry routines (circ_apphot, get_annulus)
-    │   ├── psf.py                 # PSF class: trimming, resampling, normalization
-    │   └── combine_results.py     # Merge one-shot and ensemble outputs into one table
-    └── utils/
-        ├── constants.py           # MOSAIC_PIXEL_SCALE_ARCSEC, PSIZE_ASEC, APCOR, FACTORS, counts_to_ujy()
-        ├── io.py                  # load_fits_image(), get_PSF(), save_rows()
-        ├── psf_utils.py           # make_PSF(), place_PSF()
-        ├── plotting.py            # make_plot(), save_x_profile()
-        ├── common.py              # Shared utility functions
-        └── custom_logger.py       # configure_logging()
+│   └── default.yml           # all pipeline parameters
+├── mag_info/                 # target list (name RA Dec)
+├── src/
+│   ├── config/loader.py      # YAML → AppConfig, validation
+│   ├── core/
+│   │   ├── photometry.py     # EnsemblePhotometry + perform_photometry()
+│   │   ├── analysis.py       # process_all_magnetars() → 5σ limits
+│   │   ├── idl_circapphot.py # circ_apphot (IDL-ported)
+│   │   └── combine_results.py
+│   └── utils/
+│       ├── constants.py      # PSIZE_ASEC, APCOR, FACTORS, counts_to_ujy()
+│       ├── io.py             # load_fits_image(), get_PSF(), save_rows()
+│       ├── psf_utils.py      # make_PSF(), place_PSF()
+│       └── plotting.py       # diagnostic plots
+├── scripts/                  # standalone figure scripts (thesis plots)
+└── results/
+    └── photometry/           # per-target ensemble & one-shot CSVs
 ```
+
+---
 
 ## Configuration
 
-The pipeline is driven by a YAML config file. All keys are flat (no nesting).
-
-### Required keys
+Pipeline driven by a flat YAML file. Required keys:
 
 | Key | Description |
 |-----|-------------|
-| `magnetars_list_path_file` | Path to target list file (whitespace-separated: `name ra dec`) |
-| `data_path_folder` | Directory containing per-target mosaic subdirectories |
-| `prf_path` | Directory containing APEX PRF FITS files |
-| `channels` | List of IRAC channels to process, e.g. `[1, 2, 3, 4]` |
-| `grid` | Grid size for PRF injection (N×N positions) |
-| `spacing` | Pixel spacing between PRF injection positions |
-| `rap_(cam_pix)` | Aperture radius in native IRAC camera pixels |
-| `rbackin_(cam_pix)` | Inner sky annulus radius in native IRAC camera pixels |
-| `rbackout_(cam_pix)` | Outer sky annulus radius in native IRAC camera pixels |
+| `magnetars_list_path_file` | Target list (`name ra dec`, whitespace-separated) |
+| `data_path_folder` | Root of per-target mosaic directories |
+| `prf_path` | Directory with APEX PRF FITS files |
+| `channels` | IRAC channels to process, e.g. `[1, 2, 3, 4]` |
+| `grid` | Grid size N for N×N injection positions |
+| `spacing` | Mosaic-pixel spacing between grid positions |
+| `rap_(cam_pix)` | Aperture radius in native IRAC pixels |
+| `rbackin_(cam_pix)` | Inner annulus radius in native IRAC pixels |
+| `rbackout_(cam_pix)` | Outer annulus radius in native IRAC pixels |
 
-Radii must satisfy `rap < rbackin < rbackout`. The loader converts these to mosaic pixels per channel using the native IRAC pixel scales from `utils/constants.py`.
-
-### Optional keys (with defaults)
+Key optional parameters (all have defaults):
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `ensemble_phot_data` | `results/photometry/ensemble_data` | Base path (without extension) for ensemble photometry output |
-| `one_shot_phot_data` | `results/photometry/one_shot_data` | Base path for one-shot photometry output |
-| `output_file` | `results/output` | Base path for the final 5σ limit file |
-| `output_formats` | `['csv']` | List of output formats: `csv`, `coldat`, or both |
-| `uJy_units` | `true` | Write flux values in µJy; if `false`, raw MJy/sr counts |
-| `photometry_method` | `circ_apphot` | Aperture photometry backend: `circ_apphot` or `photutils` |
-| `save_plots` | `false` | Save aperture overlay and profile diagnostic plots |
-| `start_sim` | `true` | Run the ensemble PRF injection; if `false`, only one-shot photometry |
-| `psf_trim_pixels` | `50` | Pixels to trim from each edge of the raw APEX PRF before downsampling |
+| `photometry_method` | `circ_apphot` | Backend: `circ_apphot` or `photutils` |
+| `uJy_units` | `true` | Output in µJy; `false` → raw MJy/sr |
+| `save_plots` | `false` | Aperture overlay diagnostic plots |
+| `start_sim` | `true` | Run ensemble; `false` → one-shot only |
+| `psf_trim_pixels` | `50` | Edge pixels to trim from raw APEX PRF |
+| `output_formats` | `['csv']` | `csv`, `coldat`, or both |
 
-The legacy keys `intermediate_path_file` and `result_path_file` are also accepted as fallbacks for `ensemble_phot_data` and `output_file` respectively, for backwards compatibility.
+Mosaic directory structure expected: `<data_path_folder>/<name>/mosaici{ch}/Combine/mosaic.fits`
 
-## How the pipeline works
+PRF files expected: `<prf_path>/apex_sh_IRAC{ch}_col129_row129_x100.fits`
 
-### Per-target (main.py → EnsemblePhotometry)
-
-For each target in the target list:
-
-1. Build an `EnsemblePhotometryConfig` from the top-level `AppConfig`.
-2. For each requested IRAC channel (1–4):
-   - Open `<data_path_folder>/<name>/mosaici{ch}/Combine/mosaic.fits` and extract image data and WCS.
-   - Convert RA/Dec to mosaic pixel coordinates via `astropy.wcs.WCS`.
-   - Scale aperture/annulus radii from native IRAC pixels to mosaic pixels using `PSIZE_ASEC[ch] / MOSAIC_PIXEL_SCALE_ARCSEC`.
-   - Run `perform_photometry()` at the target position (**one-shot**) and record flux/sigma.
-   - Load the APEX PRF: `<prf_path>/apex_sh_IRAC{ch}_col129_row129_x100.fits`.
-   - For each injection scale in `FACTORS × σ_one_shot`, place a resampled+shifted PRF at each of the `grid × grid` positions centered on the target (**ensemble**).
-   - Run `perform_photometry()` on each simulated image and collect rows.
-3. Write this target's one-shot and ensemble rows immediately (append mode) via `save_rows()`.
-
-### 5σ limit computation (analysis.py → process_all_magnetars)
-
-After all targets are processed:
-
-1. Read the ensemble photometry CSV.
-2. For each (target, channel), group the recovered fluxes into windows of size `grid²` (one window per injection flux level).
-3. Compute `σ_ensemble = std(recovered_flux)` within each window.
-4. Compute the 5σ upper limit: `5 × mean(σ_ensemble)` (valid in the background-dominated regime).
-5. Write a tab-separated output file with one row per target and columns for each channel's 5σ limit in µJy.
+---
 
 ## Output files
 
-| File | Description |
-|------|-------------|
-| `<one_shot_phot_data>.<fmt>` | One-shot photometry: `name, phot, sigma, channel, unit` |
-| `<ensemble_phot_data>.<fmt>` | Ensemble measurements: `name, ra, dec, channel, x_pos, y_pos, scale, expected_flux, flux, sigma, unit` |
-| `<output_file>` | Final 5σ limits: tab-separated, columns `name, ch1_sens5(µJy), ch2_sens5(µJy), ch3_sens5(µJy), ch4_sens5(µJy)` |
+| File | Columns |
+|------|---------|
+| `one_shot_data.csv` | `name, phot, sigma, channel, unit` |
+| `ensemble_data.csv` | `name, ra, dec, channel, x_pos, y_pos, scale, expected_flux, flux, sigma, unit` |
+| `all_sigma_ensemble.coldat` | `name, ch1_sens5(µJy), ch2_sens5(µJy), ch3_sens5(µJy), ch4_sens5(µJy)` |
 
-## Running the analysis step standalone
+---
 
-To recompute 5σ limits from an existing ensemble file:
+## Recompute limits from existing ensemble data
 
 ```bash
 python -c "
 from src.core.analysis import process_all_magnetars
-process_all_magnetars(
-    'results/photometry/ensemble_data.csv',
-    'results/output.coldat',
-    grid=3,
-)
+process_all_magnetars('results/photometry/ensemble_data.csv', 'results/output.coldat', grid=3)
 "
 ```
 
-Or using the module's own CLI:
-
-```bash
-python src/core/analysis.py -i results/photometry/ensemble_data.csv -o results/output.coldat
-```
+---
 
 ## Troubleshooting
 
-- **Missing PRF files**: confirm `prf_path` points to the directory containing `apex_sh_IRAC{n}_col129_row129_x100.fits`.
-- **WCS conversion failures**: inspect the mosaic FITS header with `astropy.io.fits` — valid WCS keywords are required.
-- **`Invalid configuration` on startup**: the loader validates all required keys, path existence, and radius ordering; the error message will identify the failing check.
-- **`Expected N rows … got M`** in analysis: some grid positions failed during the ensemble run. Check the log for warnings about `make_PSF` or photometry failures on those positions.
-- **Partial results**: if a target fails mid-run, previously written rows are preserved. Re-run after fixing the issue; stale output files are removed at the start of each run.
+| Symptom | Fix |
+|---------|-----|
+| Missing PRF files | Check `prf_path` contains `apex_sh_IRAC{n}_col129_row129_x100.fits` |
+| WCS conversion failure | Inspect FITS header — valid `CRVAL`, `CRPIX`, `CD` keywords required |
+| `Invalid configuration` on startup | Loader validates all required keys and radius ordering; error message identifies the failing key |
+| `Expected N rows, got M` in analysis | Some grid positions failed — check logs for `make_PSF` or photometry warnings |
+| Lower fluxes than literature | Likely annular over-subtraction in structured backgrounds; expected in Galactic-plane fields |
 
-## Contact / authorship
+---
 
-Author: Darkhan Nurzhakyp (`darkhan.nurzhakyp@nu.edu.kz`). See `pyproject.toml` for package metadata.
+## Author
+
+Darkhan Nurzhakyp — `darkhan.nurzhakyp@nu.edu.kz`

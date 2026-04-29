@@ -1,5 +1,5 @@
 """
-FITS file I/O and tabular data persistence for PhotometryPy.
+FITS file I/O and tabular data persistence for IRACMagLim.
 """
 import csv
 import logging

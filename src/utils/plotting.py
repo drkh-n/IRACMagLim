@@ -1,5 +1,5 @@
 """
-Diagnostic plotting utilities for PhotometryPy.
+Diagnostic plotting utilities for IRACMagLim.
 """
 import logging
 import os

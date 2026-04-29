@@ -1,5 +1,5 @@
 """
-PSF processing and image injection utilities for PhotometryPy.
+PSF processing and image injection utilities for IRACMagLim.
 """
 import logging
 from typing import Optional
