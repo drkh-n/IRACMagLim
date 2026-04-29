@@ -4,6 +4,7 @@
 
 Developed as part of an MSc thesis at Nazarbayev University: *"Photometry of Magnetars in Spitzer Telescope Infrared Images"* (Darkhan Nurzhakyp, 2026).
 
+*In honor of my supervisor, Dr. Bruce Grossan. Let his name live forever.*
 ---
 
 ## Scientific context
@@ -166,7 +167,3 @@ process_all_magnetars('results/photometry/ensemble_data.csv', 'results/output.co
 | Lower fluxes than literature | Likely annular over-subtraction in structured backgrounds; expected in Galactic-plane fields |
 
 ---
-
-## Author
-
-Darkhan Nurzhakyp — `darkhan.nurzhakyp@nu.edu.kz`
