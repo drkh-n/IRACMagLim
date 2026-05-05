@@ -50,16 +50,6 @@ F_5σ = 5 × mean_k(σ_ens(F_inj,k))
 
 *Limits span > 3 orders of magnitude — from ~10 µJy (1E 2259+586) to ~34,700 µJy (SGR 1806−20) — driven entirely by local background brightness, not exposure depth.*
 
-### Sensitivity vs. Galactic latitude
-
-![5σ limit vs. Galactic latitude](assets/limit_vs_glat.png)
-
-*Sources closer to the Galactic plane (low |b|) suffer higher confusion noise and produce systematically weaker limits.*
-
-### Physical interpretation
-
-Multi-band spectral indices for the two detected sources are uniformly negative (α₂₄ = −0.49 ± 0.07 for 4U 0142+61), ruling out a passive fallback dust disk (α > 0) and consistent with the magnetospheric slope α = −0.96 measured by Hare et al. (2024) with JWST. Five targets with F₅σ(4.5 µm) < 200 µJy are the highest-priority candidates for JWST MIRI follow-up.
-
 ---
 
 ## Quick start
